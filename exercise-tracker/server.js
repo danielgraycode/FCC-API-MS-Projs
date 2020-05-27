@@ -48,7 +48,36 @@ app.post("/api/exercise/new-user", function (req, res) {
 });
 
 //Add exercise
-app.post("/api/exercise/add", function (req, res) {});
+app.post("/api/exercise/add", function (req, res) {
+  //Get the details from the body
+  let userId = req.body.userId;
+  let description = req.body.description;
+  let duration = req.body.duration;
+  let date = req.body.date;
+
+  let workoutToAdd = {
+    description: description,
+    duration: duration,
+    date: date,
+  };
+
+  User.findById({ _id: userId }, function (err, idFound) {
+    if (err) return res.status(500).json({ erorr: err });
+    idFound.log.push(workoutToAdd);
+    idFound.count = idFound.count + 1;
+    idFound.save(function (err, data) {
+      if (err) return res.status(500).json({ erorr: err });
+      //Return the data saved to the database to the user
+      res.json({
+        username: idFound.username,
+        description: description,
+        duration: duration,
+        date: date,
+        _id: data._id,
+      });
+    });
+  });
+});
 
 //Get exercise log
 app.get("/api/exercise/log", function (req, res) {
@@ -58,6 +87,10 @@ app.get("/api/exercise/log", function (req, res) {
   let from = req.query.from;
   let to = req.query.to;
   let limit = req.query.limit;
+  //Only return all workouts when all the optional parameters are empty
+  if (from == undefined || to == undefined || limit == undefined) {
+    getAllExercises(req, res, userid);
+  }
 });
 
 // Not found middleware
@@ -86,3 +119,12 @@ app.use((err, req, res, next) => {
 const listener = app.listen("8765", () => {
   console.log("Your app is listening on port " + listener.address().port);
 });
+
+//Return all exercise logs to the user
+function getAllExercises(req, res, userid) {
+  User.findById(userid, function (err, data) {
+    if (err) return res.status(500).json({ error: err });
+    //Return all the exercises
+    res.json(data);
+  });
+}
