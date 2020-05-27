@@ -29,7 +29,7 @@ var userSchema = new schema({
 });
 let User = mongoose.model("user", userSchema);
 var exerciseSchema = new schema({
-  userId: { type: String, required: true },
+  _id: { type: String, required: true },
   description: { type: String, required: true },
   duration: { type: Number, required: true },
   date: { type: Date, required: true },
@@ -72,16 +72,23 @@ app.post("/api/exercise/add", function (req, res) {
     description: description,
     duration: duration,
     date: date,
-    userId: userId,
+    _id: userId,
   });
   User.findById({ _id: userId }, function (err, idFound) {
     if (err) return res.status(500).json({ erorr: err });
     //Update exercise count
     idFound.count = idFound.count + 1;
+    let username = ifFound.username;
     idFound.save(function (err, data) {
       newExercise.save(function (err, data) {
         if (err) res.status(500).json({ error: err });
-        res.json(data);
+        res.json({
+          description: description,
+          duration: duration,
+          date: date,
+          _id: userId,
+          username: username,
+        });
       });
     });
   });
@@ -109,14 +116,29 @@ app.get("/api/exercise/log", function (req, res) {
     to = new Date(to);
     query.date = { $lt: to };
   }
+  User.findById(userid, function (err, userinfo) {
+    if (err) res.status(500).json({ error: err });
+    //Execute query
+    Exercise.find(query)
+      .limit(Number(limit))
+      .exec(function (err, data) {
+        if (err) res.status(500).json({ error: err });
+        res.json({
+          _id: userinfo._id,
+          username: userinfo.username,
+          count: userinfo.count,
+          log: data,
+        });
+      });
+  });
+});
 
-  //Execute query
-  Exercise.find(query)
-    .limit(Number(limit))
-    .exec(function (err, data) {
-      if (err) res.status(500).json({ error: err });
-      res.json(data);
-    });
+//Return all users
+app.get("/api/exercise/users", function (req, res) {
+  User.find().exec(function (err, data) {
+    if (err) res.status(500).json({ error: err });
+    res.json(data);
+  });
 });
 
 // Not found middleware
