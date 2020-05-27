@@ -26,9 +26,15 @@ var userSchema = new schema({
   _id: String,
   username: String,
   count: Number,
-  log: [{ description: String, duration: Number, date: String }],
 });
 let User = mongoose.model("user", userSchema);
+var exerciseSchema = new schema({
+  userId: { type: String, required: true },
+  description: { type: String, required: true },
+  duration: { type: Number, required: true },
+  date: { type: Date, required: true },
+});
+let Exercise = mongoose.model("exercise", exerciseSchema);
 
 //Create new user
 app.post("/api/exercise/new-user", function (req, res) {
@@ -55,25 +61,27 @@ app.post("/api/exercise/add", function (req, res) {
   let duration = req.body.duration;
   let date = req.body.date;
 
-  let workoutToAdd = {
+  //Use current date if no date specified
+  if (date == "") {
+    date = new Date();
+  } else {
+    date = Date.parse(date);
+  }
+
+  let newExercise = new Exercise({
     description: description,
     duration: duration,
     date: date,
-  };
-
+    userId: userId,
+  });
   User.findById({ _id: userId }, function (err, idFound) {
     if (err) return res.status(500).json({ erorr: err });
-    idFound.log.push(workoutToAdd);
+    //Update exercise count
     idFound.count = idFound.count + 1;
     idFound.save(function (err, data) {
-      if (err) return res.status(500).json({ erorr: err });
-      //Return the data saved to the database to the user
-      res.json({
-        username: idFound.username,
-        description: description,
-        duration: duration,
-        date: date,
-        _id: data._id,
+      newExercise.save(function (err, data) {
+        if (err) res.status(500).json({ error: err });
+        res.json(data);
       });
     });
   });
@@ -87,10 +95,28 @@ app.get("/api/exercise/log", function (req, res) {
   let from = req.query.from;
   let to = req.query.to;
   let limit = req.query.limit;
-  //Only return all workouts when all the optional parameters are empty
-  if (from == undefined || to == undefined || limit == undefined) {
-    getAllExercises(req, res, userid);
+  let query = {};
+
+  //Construct query based on what we are given
+  query.userId = userid;
+
+  if (from !== undefined) {
+    from = new Date(from);
+    query.date = { $gte: from };
   }
+
+  if (to !== undefined) {
+    to = new Date(to);
+    query.date = { $lt: to };
+  }
+
+  //Execute query
+  Exercise.find(query)
+    .limit(Number(limit))
+    .exec(function (err, data) {
+      if (err) res.status(500).json({ error: err });
+      res.json(data);
+    });
 });
 
 // Not found middleware
@@ -119,12 +145,3 @@ app.use((err, req, res, next) => {
 const listener = app.listen("8765", () => {
   console.log("Your app is listening on port " + listener.address().port);
 });
-
-//Return all exercise logs to the user
-function getAllExercises(req, res, userid) {
-  User.findById(userid, function (err, data) {
-    if (err) return res.status(500).json({ error: err });
-    //Return all the exercises
-    res.json(data);
-  });
-}
