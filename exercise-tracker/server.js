@@ -22,19 +22,13 @@ app.get("/", (req, res) => {
 });
 
 //Setup mongoose
-var userSchema = new schema({
+var UserSchema = new mongoose.Schema({
   _id: String,
   username: String,
-  count: Number,
+  log: [{ description: String, duration: Number, date: String }],
 });
-let User = mongoose.model("user", userSchema);
-var exerciseSchema = new schema({
-  _id: { type: String, required: true },
-  description: { type: String, required: true },
-  duration: { type: Number, required: true },
-  date: { type: Date, required: true },
-});
-let Exercise = mongoose.model("exercise", exerciseSchema);
+
+var User = mongoose.model("User", UserSchema);
 
 //Create new user
 app.post("/api/exercise/new-user", function (req, res) {
@@ -44,99 +38,100 @@ app.post("/api/exercise/new-user", function (req, res) {
     username: username,
     count: 0,
   });
-  usertoadd.save(function (err, data) {
-    if (err)
-      return res
-        .status(500)
-        .json({ error: "An error occured creating the accoount" });
-    res.json({ username: data.username, _id: data._id });
+  usertoadd.save(function (err, newuser) {
+    if (err) return res.status(500).json({ error: error });
+    res.json({ username: newuser.username, _id: newuser._id });
   });
 });
 
-//Add exercise
-app.post("/api/exercise/add", function (req, res) {
-  //Get the details from the body
-  let userId = req.body.userId;
-  let description = req.body.description;
-  let duration = req.body.duration;
-  let date = req.body.date;
+app.post("/api/exercise/add", async function (req, res) {
+  const userId = req.body.userId;
+  const description = req.body.description;
+  const duration = Number(req.body.duration);
+  let date;
 
-  //Use current date if no date specified
-  if (date == "") {
-    date = new Date();
+  if (!req.body.date || req.body.date === "") {
+    date = Date.now();
   } else {
-    date = Date.parse(date);
+    date = req.body.date;
   }
 
-  let newExercise = new Exercise({
-    description: description,
-    duration: duration,
-    date: date,
-    _id: userId,
-  });
-  User.findById({ _id: userId }, function (err, idFound) {
-    if (err) return res.status(500).json({ erorr: err });
-    //Update exercise count
-    idFound.count = idFound.count + 1;
-    let username = ifFound.username;
-    idFound.save(function (err, data) {
-      newExercise.save(function (err, data) {
-        if (err) res.status(500).json({ error: err });
-        res.json({
-          description: description,
-          duration: duration,
-          date: date,
-          _id: userId,
-          username: username,
-        });
+  //Show them the nice formatted date
+  let userDate = new Date(date).toDateString();
+  let userFound = await User.findById(userId);
+  if (userFound) {
+    //Push the exercise to the log array
+    userFound.log.push({ description, duration, date });
+    //Save the updated user
+    userFound.save(function (err, user) {
+      if (err) return res.status(500).error({ error: err });
+
+      res.json({
+        username: user.username,
+        description: description,
+        duration: duration,
+        _id: user._id,
+        date: userDate,
       });
     });
-  });
+  }
 });
 
-//Get exercise log
-app.get("/api/exercise/log", function (req, res) {
-  //REQUIRED
-  let userid = req.query.userId;
-  //OPTIONAL
-  let from = req.query.from;
-  let to = req.query.to;
-  let limit = req.query.limit;
-  let query = {};
+app.get("/api/exercise/log", async function (req, res) {
+  // pull query params off the URL
+  const userId = req.query.userId;
+  const fromDate = req.query.from;
+  const toDate = req.query.to;
+  const limit = req.query.limit;
 
-  //Construct query based on what we are given
-  query.userId = userid;
+  var user = await User.findById(userId).sort("-date");
+  if (user._id) {
+    let userVal = {
+      _id: user._id,
+      username: user.username,
+    };
+    let logs = user.log.filter((log) => {
+      if (fromDate) {
+        let fd = new Date(fromDate);
+        userVal.from = fd.toString().split(" ").slice(0, 4).join(" ");
+        if (toDate) {
+          let td = new Date(toDate);
+          userVal.to = td.toString().split(" ").slice(0, 4).join(" ");
+          return log.date >= fd && log.date <= td;
+        }
+        return log.date >= fd;
+      } else if (toDate) {
+        let td = new Date(toDate);
+        userVal.to = td.totring().split(" ").slice(0, 4).join(" ");
+        return log.date <= td;
+      }
+      return true;
+    });
+    if (limit) {
+      logs = logs.slice(0, limit);
+    }
+    let fixedLog = logs.map((log) => {
+      console.log(log);
+      return {
+        date: new Date(log.date).toDateString(),
+        description: log.description,
+        duration: log.duration,
+      };
+    });
 
-  if (from !== undefined) {
-    from = new Date(from);
-    query.date = { $gte: from };
+    userVal.count = logs.length;
+    userVal.log = fixedLog;
+
+    res.send(userVal);
+  } else {
+    res.send("unknown userId");
   }
-
-  if (to !== undefined) {
-    to = new Date(to);
-    query.date = { $lt: to };
-  }
-  User.findById(userid, function (err, userinfo) {
-    if (err) res.status(500).json({ error: err });
-    //Execute query
-    Exercise.find(query)
-      .limit(Number(limit))
-      .exec(function (err, data) {
-        if (err) res.status(500).json({ error: err });
-        res.json({
-          _id: userinfo._id,
-          username: userinfo.username,
-          count: userinfo.count,
-          log: data,
-        });
-      });
-  });
 });
 
 //Return all users
 app.get("/api/exercise/users", function (req, res) {
   User.find().exec(function (err, data) {
-    if (err) res.status(500).json({ error: err });
+    if (err) return res.status(500).json({ error: err });
     res.json(data);
   });
 });
